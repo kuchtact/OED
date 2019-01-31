@@ -92,6 +92,7 @@ function fetchMeterBarReadings(meterIDs: number[], timeInterval: TimeInterval): 
 	return async (dispatch: Dispatch, getState: GetState) => {
 		const barDuration = getState().graph.barDuration;
 		dispatch(requestMeterBarReadings(meterIDs, timeInterval, barDuration));
+		// TODO: Figure out why barduration is rounded and in days. Probably something to do with compression speed.
 		const readings = await compressedReadingsApi.meterBarReadings(meterIDs, timeInterval, Math.round(barDuration.asDays()));
 		dispatch(receiveMeterBarReadings(meterIDs, timeInterval, barDuration, readings));
 	};

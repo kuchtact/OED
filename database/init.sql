@@ -5,5 +5,5 @@
 CREATE USER oed WITH SUPERUSER PASSWORD 'opened';
 CREATE DATABASE oed WITH OWNER oed;
 CREATE DATABASE oed_testing WITH OWNER oed;
-
+-- Change 'oed' into an all powerful database controller.
 ALTER ROLE oed SUPERUSER;
