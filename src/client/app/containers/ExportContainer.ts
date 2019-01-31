@@ -11,10 +11,20 @@ import { State } from '../types/redux/state';
 import {CompressedBarReading, CompressedBarReadings, CompressedLineReading} from '../types/compressed-readings';
 
 
+/**
+ * Transform the compressed line reading to an array.
+ * @param {CompressedLineReading} reading
+ * @returns {[number , number]} An array containing the reading's starting time and it's value.
+ */
 function transformLineReadingToLegacy(reading: CompressedLineReading): [number, number] {
 	return [reading.startTimestamp, reading.reading];
 }
 
+/**
+ * Transfrom the compressed bar reading into an array.
+ * @param {CompressedBarReading} reading
+ * @returns {[number , number]} An array containing the reading's starting time and it's value.
+ */
 function transformBarReadingToLegacy(reading: CompressedBarReading): [number, number] {
 	return [reading.startTimestamp, reading.reading];
 }
