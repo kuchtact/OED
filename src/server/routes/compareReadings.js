@@ -10,6 +10,11 @@ const moment = require('moment');
 
 const Reading = require('../models/Reading');
 
+/**
+ * Checks if compared meter readings are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateMeterCompareReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -26,6 +31,11 @@ function validateMeterCompareReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Checks if group compared meter readings are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateGroupCompareReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -42,6 +52,11 @@ function validateGroupCompareReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Checks if if query parameters are valid.
+ * @param queryParams
+ * @returns {boolean}
+ */
 function validateQueryParams(queryParams) {
 	const validParams = {
 		type: 'object',
@@ -63,14 +78,35 @@ function validateQueryParams(queryParams) {
 	return paramsValidationResult.valid;
 }
 
+// TODO: I need to take some more time with the following functions.
+/**
+ *
+ * @param meterIDs
+ * @param currStart
+ * @param currEnd
+ * @param duration
+ * @returns {Promise<void>}
+ */
 async function meterCompareReadings(meterIDs, currStart, currEnd, duration) {
 	return await Reading.getCompareReadings(meterIDs, currStart, currEnd, duration);
 }
 
+/**
+ *
+ * @param groupIDs
+ * @param currStart
+ * @param currEnd
+ * @param duration
+ * @returns {Promise<*>}
+ */
 async function groupCompareReadings(groupIDs, currStart, currEnd, duration) {
 	return await Reading.getGroupCompareReadings(groupIDs, currStart, currEnd, duration);
 }
 
+/**
+ *
+ * @returns {Router|router}
+ */
 function createRouter() {
 	const router = express.Router();
 
