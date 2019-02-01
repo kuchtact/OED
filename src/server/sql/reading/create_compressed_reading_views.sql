@@ -7,24 +7,35 @@
 Rounds a timestamp up to the next interval
  */
 CREATE OR REPLACE FUNCTION date_trunc_up(interval_precision TEXT, ts TIMESTAMP)
-	RETURNS TIMESTAMP LANGUAGE SQL
+	RETURNS TIMESTAMP
+	-- TODO: Find if this can be moved to after the function declaration as done in all other functions.
+	LANGUAGE SQL
+-- Does not use any information from the database.
 IMMUTABLE
 AS $$
 SELECT CASE
+			-- If ts is already truncated to the correct precision, return ts
 			 WHEN ts = date_trunc(interval_precision, ts) THEN ts
+			-- Increase ts by 1 interval unit so that when truncated, it acts as though it is rounded up.
 			 ELSE date_trunc(interval_precision, ts + ('1 ' || interval_precision)::INTERVAL)
 			 END
 $$;
 
 
+/*
+Get the range of times when readings actually occur within some range to shrink.
+ */
 CREATE OR REPLACE FUNCTION shrink_tsrange_to_real_readings(tsrange_to_shrink TSRANGE)
 	RETURNS TSRANGE
 AS $$
+-- Create a variable for holding the maximum time range for some readings.
 DECLARE
 	readings_max_tsrange TSRANGE;
 BEGIN
+	-- Get the earliest start time and the latest end time for all readings and put them into readings_max_tsrange.
 	SELECT tsrange(min(start_timestamp), max(end_timestamp)) INTO readings_max_tsrange
 	FROM readings;
+	-- Return the intersection of the two time ranges.
 	RETURN tsrange_to_shrink * readings_max_tsrange;
 END;
 $$ LANGUAGE 'plpgsql';
@@ -46,6 +57,7 @@ the readings table (to aggregate data over a large time range).
 The small tables, on the other hand, are only queried for small time ranges that produce a few hundred data points.
 This is the best-case scenario for these queries, and leads to quick execution times if the table is properly clustered.
  */
+-- TODO: Figure out how the starter of each of these views is formed.
 CREATE VIEW
 minutely_readings
 	AS SELECT
@@ -142,7 +154,10 @@ daily_readings
 			ORDER BY gen.interval_start, r.meter_id;
 
 CREATE EXTENSION IF NOT EXISTS btree_gist;
--- We need a gist index to support the @> operation.
+-- We need a gist index to support the @> (contains range) operation.
+-- We use GiST since the time_interval, meter_id pair should almost always be unique so false matches will not occur
+-- very often. Using GIN would take quite a bit longer since we are often updating it and once there are many
+-- people with data on the servers, it will take forever.
 CREATE INDEX idx_daily_readings ON daily_readings USING GIST(time_interval, meter_id);
 
 
@@ -170,19 +185,29 @@ BEGIN
 		leading to unacceptable load times for the client, especially if they're on a mobile device.
 	*/
 
+	-- Create an end inclusive tsrange from the start and end timestamps and shrink it to a range only containing readings.
 	requested_range := shrink_tsrange_to_real_readings(tsrange(start_stamp, end_stamp, '[]'));
+	-- Change the time range into an interval in seconds.
 	requested_interval := upper(requested_range) - lower(requested_range);
 
+	-- If there are more than 50 days in the requested interval, return a query containing the meter, daily reading,
+	-- and start and end timestamps.
 	IF extract(DAY FROM requested_interval) >= minimum_num_pts THEN
 		RETURN QUERY
 			SELECT
 				daily.meter_id AS meter_id,
 				daily.reading_rate,
+				-- Get the first element in the time interval as the start time.
 				lower(daily.time_interval) AS start_timestamp,
+				-- Get the last element in the time interval as the end time.
 				upper(daily.time_interval) AS end_timestamp
 			FROM daily_readings daily
+			-- Only select daily_readings from meters that are in the selected list.
 			INNER JOIN unnest(meter_ids) meters(id) ON daily.meter_id = meters.id
+			-- Only select readings whose time_interval is within the requested range.
 			WHERE requested_range @> time_interval;
+	-- If there were too few days in the range, try the next largest interval which is hours.
+	-- All of these next queries are from non-materialized tables so they take longer to compute usually.
 	-- There's no quick way to get the number of hours in an interval. extract(HOURS FROM '1 day, 3 hours') gives 3.
 	ELSIF extract(EPOCH FROM requested_interval)/3600 >= minimum_num_pts THEN
 		RETURN QUERY
@@ -191,23 +216,31 @@ BEGIN
 				lower(hourly.time_interval) AS start_timestamp,
 				upper(hourly.time_interval) AS end_timestamp
 			FROM hourly_readings hourly
+      -- Only select hourly_readings from meters that are in the selected list.
 			INNER JOIN unnest(meter_ids) meters(id) ON hourly.meter_id = meters.id
-		WHERE requested_range @> time_interval;
+			-- Only select readings whose time_interval is within the requested range.
+			WHERE requested_range @> time_interval;
+	-- If there were too few hours in the requested interval, use the minute based table.
 	ELSE
 		RETURN QUERY
-		SELECT
-			minutely_readings.meter_id as meter_id,
-			minutely_readings.reading_rate as reading_rate,
-			lower(minutely_readings.time_interval) AS start_timestamp,
-			upper(minutely_readings.time_interval) AS end_timestamp
-		FROM minutely_readings
+      SELECT
+        minutely_readings.meter_id as meter_id,
+        minutely_readings.reading_rate as reading_rate,
+        lower(minutely_readings.time_interval) AS start_timestamp,
+        upper(minutely_readings.time_interval) AS end_timestamp
+      FROM minutely_readings
+      -- Only select minutely_readings from meters that are in the selected list.
 			INNER JOIN unnest(meter_ids) meters(id) ON minutely_readings.meter_id = meters.id
-		WHERE requested_range @> minutely_readings.time_interval;
+			-- Only select readings whose time_interval is within the requested range.
+      WHERE requested_range @> minutely_readings.time_interval;
 	END IF;
 END;
 $$ LANGUAGE 'plpgsql';
 
 
+/*
+The following function gets the compressed readings for a group.
+ */
 CREATE FUNCTION compressed_group_readings_2(group_ids INTEGER[], start_stamp TIMESTAMP, end_stamp TIMESTAMP)
 	RETURNS TABLE(group_id INTEGER, reading_rate FLOAT, start_timestamp TIMESTAMP, end_timestamp TIMESTAMP)
 AS $$
@@ -217,22 +250,30 @@ AS $$
 		-- First get all the meter ids that will be included in one or more groups being queried
 		SELECT array_agg(gdm.meter_id) INTO meter_ids
 		FROM groups_deep_meters gdm
+		-- Only meters that are in the array group_ids.
 		INNER JOIN unnest(group_ids) gids(id) ON gdm.group_id = gids.id;
 
 		RETURN QUERY
 			SELECT
 				gdm.group_id AS group_id,
+				-- Sum value of all readings for meters in the group.
 				SUM(compressed.reading_rate) AS reading_rate,
 				compressed.start_timestamp,
 				compressed.end_timestamp
+			-- Get the compressed readings for each meter.
 			FROM compressed_readings_2(meter_ids, start_stamp, end_stamp) compressed
+			-- Only select compressed readings from meters that are in the group.
 			INNER JOIN groups_deep_meters gdm ON compressed.meter_id = gdm.meter_id
+			-- Only select groups that are actually in the group list and not all groups that contain the previously found meters.
 			INNER JOIN unnest(group_ids) gids(id) on gdm.group_id = gids.id
 			GROUP BY gdm.group_id, compressed.start_timestamp, compressed.end_timestamp;
 	END;
 $$ LANGUAGE 'plpgsql';
 
 
+/*
+The following function gets the barchart readings for widths on the scale of days.
+ */
 CREATE FUNCTION compressed_barchart_readings_2(
 	meter_ids INTEGER[],
 	bar_width_days INTEGER,
@@ -241,33 +282,43 @@ CREATE FUNCTION compressed_barchart_readings_2(
 )
 	RETURNS TABLE(meter_id INTEGER, reading FLOAT, start_timestamp TIMESTAMP, end_timestamp TIMESTAMP)
 AS $$
-DECLARE
-	bar_width INTERVAL;
-	real_tsrange TSRANGE;
-	real_start_stamp TIMESTAMP;
-	real_end_stamp TIMESTAMP;
-BEGIN
-	bar_width := INTERVAL '1 day' * bar_width_days;
-	real_tsrange := shrink_tsrange_to_real_readings(tsrange(date_trunc_up('day', start_stamp), date_trunc('day', end_stamp)));
-	real_start_stamp := date_trunc_up('day', lower(real_tsrange));
-	real_end_stamp := date_trunc('day', upper(real_tsrange));
-	RETURN QUERY
-		SELECT dr.meter_id AS meter_id,
-			--  dr.reading_rate is the weighted average reading rate over the day, in kW. To convert it to kW * h,
-			-- we do reading_rate (kw) * time (1 day) * (24 hr / 1 day) to get kW H.
-			SUM(dr.reading_rate * 24) AS reading,
-			bars.interval_start AS start_timestamp,
-			bars.interval_start + bar_width AS end_timestamp
-	FROM daily_readings dr
-	INNER JOIN generate_series(real_start_stamp, real_end_stamp, bar_width) bars(interval_start)
-			ON tsrange(bars.interval_start, bars.interval_start + bar_width, '[]') @> dr.time_interval
-	INNER JOIN unnest(meter_ids) meters(id) ON dr.meter_id = meters.id
-	GROUP BY dr.meter_id, bars.interval_start;
+  DECLARE
+    bar_width INTERVAL;
+    real_tsrange TSRANGE;
+    real_start_stamp TIMESTAMP;
+    real_end_stamp TIMESTAMP;
+  BEGIN
+    -- Change the number of days into a time interval.
+    bar_width := INTERVAL '1 day' * bar_width_days;
+    -- Get the actual time range from the starting timestamp rounded up to the ending timestamp rounded down.
+    real_tsrange := shrink_tsrange_to_real_readings(tsrange(date_trunc_up('day', start_stamp), date_trunc('day', end_stamp)));
+    -- Roundup the beginning of the time range.
+    real_start_stamp := date_trunc_up('day', lower(real_tsrange));
+    -- Round down the end of the time range.
+    real_end_stamp := date_trunc('day', upper(real_tsrange));
 
-END;
+    RETURN QUERY
+      SELECT dr.meter_id AS meter_id,
+        -- dr.reading_rate is the weighted average reading rate over the day, in kW. To convert it to kW * h,
+        -- we do reading_rate (kw) * time (1 day) * (24 hr / 1 day) to get kW H.
+        SUM(dr.reading_rate * 24) AS reading,
+        bars.interval_start AS start_timestamp,
+        bars.interval_start + bar_width AS end_timestamp
+      FROM daily_readings dr
+      -- Iterate over the time range stepping with the specified bar_width.
+      INNER JOIN generate_series(real_start_stamp, real_end_stamp, bar_width) bars(interval_start)
+      -- Only select readings that are contained in the current step interval.
+      ON tsrange(bars.interval_start, bars.interval_start + bar_width, '[]') @> dr.time_interval
+			-- Only select readings whose meters are in the selected meter_ids array.
+      INNER JOIN unnest(meter_ids) meters(id) ON dr.meter_id = meters.id
+      GROUP BY dr.meter_id, bars.interval_start;
+  END;
 $$ LANGUAGE 'plpgsql';
 
 
+/*
+The following function gets the barchart readings on the scale of days for groups of meters.
+ */
 CREATE FUNCTION compressed_barchart_group_readings_2(
 	group_ids INTEGER[],
 	bar_width_days INTEGER,
@@ -276,26 +327,37 @@ CREATE FUNCTION compressed_barchart_group_readings_2(
 )
 	RETURNS TABLE(group_id INTEGER, reading FLOAT, start_timestamp TIMESTAMP, end_timestamp TIMESTAMP)
 AS $$
-DECLARE
-	bar_width INTERVAL;
-	real_tsrange TSRANGE;
-	real_start_stamp TIMESTAMP;
-	real_end_stamp TIMESTAMP;
-BEGIN
-	bar_width := INTERVAL '1 day' * bar_width_days;
-	real_tsrange := shrink_tsrange_to_real_readings(tsrange(date_trunc_up('day', start_stamp), date_trunc('day', end_stamp)));
-	real_start_stamp := date_trunc_up('day', lower(real_tsrange));
-	real_end_stamp := date_trunc('day', upper(real_tsrange));
-	RETURN QUERY
-	SELECT gdm.group_id AS group_id,
-				 SUM(dr.reading_rate * 24) AS reading, -- 24 hours in a day
-				 bars.interval_start AS start_timestamp,
-				 bars.interval_start + bar_width AS end_timestamp
-	FROM daily_readings dr
-		INNER JOIN generate_series(real_start_stamp, real_end_stamp, bar_width) bars(interval_start)
-			ON tsrange(bars.interval_start, bars.interval_start + bar_width, '[]') @> dr.time_interval
-		INNER JOIN groups_deep_meters gdm ON dr.meter_id = gdm.meter_id
-		INNER JOIN unnest(group_ids) groups(id) ON gdm.group_id = groups.id
-	GROUP BY gdm.group_id, bars.interval_start;
-END;
+  DECLARE
+    bar_width INTERVAL;
+    real_tsrange TSRANGE;
+    real_start_stamp TIMESTAMP;
+    real_end_stamp TIMESTAMP;
+  BEGIN
+		-- Change the number of days into a time interval.
+    bar_width := INTERVAL '1 day' * bar_width_days;
+		-- Get the actual time range from the starting timestamp rounded up to the ending timestamp rounded down.
+    real_tsrange := shrink_tsrange_to_real_readings(tsrange(date_trunc_up('day', start_stamp), date_trunc('day', end_stamp)));
+		-- Roundup the beginning of the time range.
+    real_start_stamp := date_trunc_up('day', lower(real_tsrange));
+		-- Round down the end of the time range.
+    real_end_stamp := date_trunc('day', upper(real_tsrange));
+
+		RETURN QUERY
+      SELECT gdm.group_id AS group_id,
+				-- dr.reading_rate is the weighted average reading rate over the day, in kW. To convert it to kW * h,
+				-- we do reading_rate (kw) * time (1 day) * (24 hr / 1 day) to get kW H.
+        SUM(dr.reading_rate * 24) AS reading,
+        bars.interval_start AS start_timestamp,
+        bars.interval_start + bar_width AS end_timestamp
+      FROM daily_readings dr
+      -- Iterate over the time range stepping with the specified bar_width.
+      INNER JOIN generate_series(real_start_stamp, real_end_stamp, bar_width) bars(interval_start)
+      -- Only select readings that are contained in the current step interval.
+      ON tsrange(bars.interval_start, bars.interval_start + bar_width, '[]') @> dr.time_interval
+			-- Only select readings whose corresponding meters are in the selected groups.
+      INNER JOIN groups_deep_meters gdm ON dr.meter_id = gdm.meter_id
+			-- Only use groups that have been selected in group_ids.
+      INNER JOIN unnest(group_ids) groups(id) ON gdm.group_id = groups.id
+      GROUP BY gdm.group_id, bars.interval_start;
+  END;
 $$ LANGUAGE 'plpgsql';
