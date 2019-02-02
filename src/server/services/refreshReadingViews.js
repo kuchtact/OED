@@ -7,6 +7,10 @@
 const Reading = require('../models/Reading');
 const stopDB = require('../models/database').stopDB;
 /* tslint:disable no-console */
+/**
+ * Returns a Promise to refresh the reading views.
+ * @returns {Promise<void>}
+ */
 async function refreshReadingViews() {
 	console.log('Refreshing reading views');
 	await Reading.refreshCompressedReadings();

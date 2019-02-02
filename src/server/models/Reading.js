@@ -26,7 +26,8 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to create the readings table.
+	 * Creates a table of readings by calling the create_readings_table.sql file.
+	 * This is done by returning a Promise that creates the function.
 	 * @return {Promise.<>}
 	 */
 	static createTable() {
@@ -34,23 +35,37 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to create the compressed readings function.
+	 * Creates a function to get compressed readings by calling the create_function_get_compressed_readings.sql file.
+	 * This is done by returning a Promise that creates the function.
 	 * @return {Promise.<>}
 	 */
 	static createCompressedReadingsFunction() {
 		return getDB().none(sqlFile('reading/create_function_get_compressed_readings.sql'));
 	}
 
+	/**
+	 * Creates a function to get a compressed group readings by calling the
+	 * create_function_get_compressed_group_readings.sql file.
+	 * This is done by returning a Promise that creates the function.
+	 * @returns {Promise<void>}
+	 */
 	static createCompressedGroupsReadingsFunction() {
 		return getDB().none(sqlFile('reading/create_function_get_compressed_groups_readings.sql'));
 	}
 
+	/**
+	 * Creates a function to get a compressed group of barchart readings by calling the
+	 * create_function_get_compressed_group_barchart_readings.sql file.
+	 * This is done by returning a Promise that creates the function.
+	 * @returns {Promise<void>}
+	 */
 	static createCompressedGroupsBarchartReadingsFunction() {
 		return getDB().none(sqlFile('reading/create_function_get_group_barchart_readings.sql'));
 	}
 
 	/**
-	 * Returns a promise to create the barchart readings function.
+	 * Creates a function to get the barchart readings by calling the create_function_get_barchart_readings.sql file.
+	 * This is done by returning a Promise that creates the function.
 	 * @return {Promise.<>}
 	 */
 	static createBarchartReadingsFunction() {
@@ -58,7 +73,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to create the function and materialized views that aggregate
+	 * Returns a Promise to create the function and materialized views that aggregate
 	 * readings by various time intervals.
 	 * @return {Promise<void>}
 	 */
@@ -67,7 +82,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to create the compare function
+	 * Returns a Promise to create the compare function
 	 */
 
 	static createCompareFunction(conn = getDB) {
@@ -90,7 +105,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to insert all of the given readings into the database (as a transaction)
+	 * Returns a Promise to insert all of the given readings into the database (as a transaction)
 	 * @param {array<Reading>} readings the readings to insert
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise.<>}
@@ -103,7 +118,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to insert or update all of the given readings into the database (as a transaction)
+	 * Returns a Promise to insert or update all of the given readings into the database (as a transaction)
 	 * @param {array<Reading>} readings the readings to insert or update
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise.<>}
@@ -116,7 +131,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to insert or ignore all of the given readings into the database (as a transaction)
+	 * Returns a Promise to insert or ignore all of the given readings into the database (as a transaction)
 	 * @param {array<Reading>} readings the readings to insert or update
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise<any>}
@@ -129,7 +144,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to get all of the readings for this meter from the database.
+	 * Returns a Promise to get all of the readings for this meter from the database.
 	 * @param meterID The id of the meter to find readings for
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise.<array.<Reading>>}
@@ -140,7 +155,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to get all of the readings for this meter within (inclusive) a specified date range from the
+	 * Returns a Promise to get all of the readings for this meter within (inclusive) a specified date range from the
 	 * database. If no startDate is specified, all readings from the beginning of time to the endDate are returned.
 	 * If no endDate is specified, all readings after and including the startDate are returned.
 	 * @param meterID
@@ -159,7 +174,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to insert this reading into the database.
+	 * Returns a Promise to insert this reading into the database.
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise.<>}
 	 */
@@ -177,7 +192,7 @@ class Reading {
 	}
 
 	/**
-	 * Returns a promise to insert this reading into the database, or ignore it if it already exists.
+	 * Returns a Promise to insert this reading into the database, or ignore it if it already exists.
 	 * @param conn the connection to use. Defaults to the default database connection.
 	 * @returns {Promise.<>}
 	 */
@@ -371,7 +386,7 @@ class Reading {
 	}
 
 	/**
-	 *
+	 * Gets compared meter readings by returning a Promise to create the function.
 	 * @param meterIDs
 	 * @param {Moment} currStartTimestamp
 	 * @param {Moment} currEndTimestamp
@@ -394,6 +409,15 @@ class Reading {
 		return compareReadingsByMeterID;
 	}
 
+	/**
+	 * Gets a group of compared meter readings by returning a Promise to create the function.
+	 * @param groupIDs
+	 * @param currStartTimestamp
+	 * @param currEndTimestamp
+	 * @param compareDuration
+	 * @param conn
+	 * @returns {Promise<void>}
+	 */
 	static async getGroupCompareReadings(groupIDs, currStartTimestamp, currEndTimestamp, compareDuration, conn = getDB) {
 		const allCompareReadings = await conn().func(
 			'group_compare_readings',
@@ -409,6 +433,10 @@ class Reading {
 		return compareReadingsByGroupID;
 	}
 
+	/**
+	 * The toString() function to make the return data readable.
+	 * @returns {string}
+	 */
 	toString() {
 		return `Reading [id: ${this.meterID}, reading: ${this.reading}, startTimestamp: ${this.startTimestamp}, endTimestamp: ${this.endTimestamp}]`;
 	}
