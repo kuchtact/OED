@@ -11,7 +11,11 @@ const _ = require('lodash');
 const Reading = require('../models/Reading');
 const { TimeInterval } = require('../../common/TimeInterval');
 
-
+/**
+ * Checks if the line graph meter reading parameters are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateMeterLineReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -28,6 +32,11 @@ function validateMeterLineReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Checks if the line graph meter reading query parameters are valid.
+ * @param queryParams
+ * @returns {boolean}
+ */
 function validateLineReadingsQueryParams(queryParams) {
 	const validQuery = {
 		type: 'object',
@@ -43,6 +52,11 @@ function validateLineReadingsQueryParams(queryParams) {
 	return queryValidationResult.valid;
 }
 
+/**
+ * Formats the compressed readings row in the readings table.
+ * @param readingRow
+ * @returns {{reading: number, endTimestamp: Object, startTimestamp: Object}}
+ */
 function formatCompressedReadingRow(readingRow) {
 	return {
 		reading: readingRow.reading_rate,
@@ -51,11 +65,22 @@ function formatCompressedReadingRow(readingRow) {
 	};
 }
 
+/**
+ * Returns a Promise of compressed line graph meter readings.
+ * @param meterIDs
+ * @param timeInterval
+ * @returns {Promise<Dictionary<any>>}
+ */
 async function compressedLineReadings(meterIDs, timeInterval) {
 	const rawReadings = await Reading.getNewCompressedReadings(meterIDs, timeInterval.startTimestamp, timeInterval.endTimestamp);
 	return _.mapValues(rawReadings, readingsForMeter => readingsForMeter.map(formatCompressedReadingRow));
 }
 
+/**
+ * Checks if the line graph meter group reading parameters are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateGroupLineReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -72,11 +97,22 @@ function validateGroupLineReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Returns a Promise of mapped line graph meter group readings.
+ * @param groupIDs
+ * @param timeInterval
+ * @returns {Promise<Dictionary<any>>}
+ */
 async function compressedGroupLineReadings(groupIDs, timeInterval) {
 	const rawReadings = await Reading.getNewCompressedGroupReadings(groupIDs, timeInterval.startTimestamp, timeInterval.endTimestamp);
 	return _.mapValues(rawReadings, readingsForGroup => readingsForGroup.map(formatCompressedReadingRow));
 }
 
+/**
+ * Checks if the barchart graph meter reading parameters are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateMeterBarReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -93,6 +129,11 @@ function validateMeterBarReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Checks if the barchart meter reading query parameters are valid.
+ * @param queryParams
+ * @returns {boolean}
+ */
 function validateBarReadingsQueryParams(queryParams) {
 	const validQuery = {
 		type: 'object',
@@ -112,6 +153,11 @@ function validateBarReadingsQueryParams(queryParams) {
 	return queryValidationResult.valid;
 }
 
+/**
+ * Formats the compressed barchart graph meter readings row in the readings table.
+ * @param readingRow
+ * @returns {{reading: *, endTimestamp: Object, startTimestamp: Object}}
+ */
 function formatCompressedBarReadingRow(readingRow) {
 	return {
 		reading: readingRow.reading,
@@ -120,11 +166,23 @@ function formatCompressedBarReadingRow(readingRow) {
 	};
 }
 
+/**
+ * Returns a Promised of compressed barchart graph meter readings.
+ * @param meterIDs
+ * @param barWidthDays
+ * @param timeInterval
+ * @returns {Promise<Dictionary<any>>}
+ */
 async function compressedMeterBarReadings(meterIDs, barWidthDays, timeInterval) {
 	const rawReadings = await Reading.getNewCompressedBarchartReadings(meterIDs, timeInterval.startTimestamp, timeInterval.endTimestamp, barWidthDays);
 	return _.mapValues(rawReadings, readingsForMeter => readingsForMeter.map(formatCompressedBarReadingRow));
 }
 
+/**
+ * Checks if the barchart group meter reading parameters are valid.
+ * @param params
+ * @returns {boolean}
+ */
 function validateGroupBarReadingsParams(params) {
 	const validParams = {
 		type: 'object',
@@ -141,12 +199,24 @@ function validateGroupBarReadingsParams(params) {
 	return paramsValidationResult.valid;
 }
 
+/**
+ * Returns a Promise of compressed barchart group meter readings.
+ * @param groupIDs
+ * @param barWidthDays
+ * @param timeInterval
+ * @returns {Promise<Dictionary<any>>}
+ */
 async function compressedGroupBarReadings(groupIDs, barWidthDays, timeInterval) {
 	const rawReadings = await Reading.getNewCompressedBarchartGroupReadings(
 		groupIDs, timeInterval.startTimestamp, timeInterval.endTimestamp, barWidthDays);
 	return _.mapValues(rawReadings, readingsForMeter => readingsForMeter.map(formatCompressedBarReadingRow));
 }
 
+// TODO: Still not sure what exactly Router is.
+/**
+ *
+ * @returns {Router|router}
+ */
 function createRouter() {
 	const router = express.Router();
 	router.get('/line/meters/:meter_ids', async (req, res) => {

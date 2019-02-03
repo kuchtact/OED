@@ -78,9 +78,8 @@ function validateQueryParams(queryParams) {
 	return paramsValidationResult.valid;
 }
 
-// TODO: I need to take some more time with the following functions.
 /**
- *
+ * Returns a Promise of compared meter readings.
  * @param meterIDs
  * @param currStart
  * @param currEnd
@@ -92,7 +91,7 @@ async function meterCompareReadings(meterIDs, currStart, currEnd, duration) {
 }
 
 /**
- *
+ * Returns a Promise of a group of compared meter readings.
  * @param groupIDs
  * @param currStart
  * @param currEnd
@@ -103,6 +102,7 @@ async function groupCompareReadings(groupIDs, currStart, currEnd, duration) {
 	return await Reading.getGroupCompareReadings(groupIDs, currStart, currEnd, duration);
 }
 
+// TODO: I'm a little confused about what exactly Router is...
 /**
  *
  * @returns {Router|router}
